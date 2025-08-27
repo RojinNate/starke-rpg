@@ -1,14 +1,225 @@
 <!doctype html>
 <html>
-  <head>
-    <meta charset="utf-8">
-    <title>301 Tattoo RPG — Test Page</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <link rel="stylesheet" href="css/styles.css">
-  </head>
-  <body>
-    <h1>It works!</h1>
-    <p>If you can see this styled and changing, CSS + JS are working 🎉</p>
-    <script src="js/main.js"></script>
-  </body>
-</html>
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Starke Mini RPG — 301 Tattoo</title>
+<style>
+  body { background:#111; color:#ddd; font-family:system-ui, sans-serif; display:flex; flex-direction:column; align-items:center; gap:8px; }
+  canvas { image-rendering: pixelated; image-rendering: crisp-edges; border:2px solid #444; background:#000; }
+  .panel { max-width:600px; font-size:14px; line-height:1.4; }
+  button { background:#222; color:#ddd; border:1px solid #444; padding:6px 10px; cursor:pointer; }
+</style>
+</head>
+<body>
+  <h3>Starke, FL — Mini RPG</h3>
+  <canvas id="game" width="320" height="240"></canvas>
+  <div class="panel">
+    <p>Move: Arrows/WASD • E: interact/enter/exit • Space: continue • Save/Load/Reset below</p>
+    <button id="saveBtn">Save</button> <button id="loadBtn">Load</button> <button id="resetBtn">Reset</button>
+  </div>
+
+  <!-- ======== PASTE YOUR FAQS HERE ======== -->
+  <!-- Only edit the JSON inside this script tag. One entry per Q&A. -->
+  <script type="application/json" id="nathan_faqs_json">
+  {
+    "faqs": [
+      {
+        "q": "Does a tattoo hurt?",
+        "a": "Feels like a steady scratch. Most folks do fine. We can take breaks.",
+        "weight": 3
+      },
+      {
+        "q": "How do I book?",
+        "a": "Text 904-515-2333 with your idea, placement photo, and availability.",
+        "weight": 3
+      },
+      {
+        "q": "How much will it cost?",
+        "a": "Depends on size, detail, placement. Send refs and I’ll estimate before we book.",
+        "weight": 2
+      },
+      {
+        "q": "Do you take walk-ins?",
+        "a": "Yes—Thu–Sun 1–7pm. Outside that, text to set an appointment.",
+        "weight": 2
+      },
+      {
+        "q": "Aftercare basics?",
+        "a": "Keep it clean, thin ointment, no soaking or sun while healing. I’ll give you a sheet.",
+        "weight": 2
+      }
+    ]
+  }
+  </script>
+  <!-- ======== END FAQ SECTION ======== -->
+
+<script>
+(() => {
+  // ----------------- CONFIG -----------------
+  const TILE = 16;
+  const VIEW_W = 20, VIEW_H = 15; // 320x240
+  const COLORS = {
+    sky:"#1b263b", ground:"#283d58", road:"#3b4f6b", bldg:"#7b8ba5",
+    door:"#f7b267", player:"#ffd166", npc:"#80ed99",
+    textBG:"#000000cc", text:"#e6e6e6", accent:"#f1fa8c",
+    wall:"#14213d", interior:"#1f2a44", counter:"#6c757d"
+  };
+
+  // ----------------- MAPS -----------------
+  // Tile legend: 0 ground, 1 building block (solid), 2 road, 3 door, 4 interior wall (solid), 5 interior floor, 6 counter (solid)
+  const OW_W=42, OW_H=30;
+  const overworld = Array.from({length:OW_H}, (_,y)=>Array.from({length:OW_W}, (_,x)=>{
+    if (y===12 || y===13) return 2; // road stripe
+    return 0;
+  }));
+
+  function rect(grid,x0,y0,w,h,tile){
+    for(let y=y0;y<y0+h;y++){
+      for(let x=x0;x<x0+w;x++){
+        if (y>=0 && x>=0 && y<grid.length && x<grid[0].length){
+          grid[y][x]=tile;
+        }
+      }
+    }
+  }
+
+  // ---- Buildings you can tweak (position is coarse/fictional) ----
+  const BUILDINGS = [
+    { name:"301 Tattoo", key:"shop", x:18, y:7, w:6, h:4, doorX:21, doorY:11 },
+    { name:"Diner",      key:"diner", x:6,  y:5, w:5, h:4, doorX:8,  doorY:9  },
+    { name:"Pawn",       key:"pawn",  x:30, y:6, w:6, h:4, doorX:33, doorY:11 }
+  ];
+  BUILDINGS.forEach(b => { rect(overworld, b.x, b.y, b.w, b.h, 1); overworld[b.doorY][b.doorX]=3; });
+
+  // ---- Interior: Tattoo Shop (simple) ----
+  const SHOP_W=18, SHOP_H=12;
+  const shop = Array.from({length:SHOP_H}, (_,y)=>Array.from({length:SHOP_W}, (_,x)=>{
+    if (x===0||y===0||x===SHOP_W-1||y===SHOP_H-1) return 4;
+    return 5;
+  }));
+  rect(shop, 2,3, 6,1, 6); // counter
+  shop[SHOP_H-1][Math.floor(SHOP_W/2)] = 3; // exit door
+
+  // ----------------- DOOR LINKS -----------------
+  const DOORS = [
+    // Into 301 Tattoo
+    { map:"overworld", x:BUILDINGS[0].doorX, y:BUILDINGS[0].doorY, target:"shop", tx:Math.floor(SHOP_W/2), ty:SHOP_H-2 },
+    // Back out
+    { map:"shop", x:Math.floor(SHOP_W/2), y:SHOP_H-1, target:"overworld", tx:BUILDINGS[0].doorX, ty:BUILDINGS[0].doorY+1 }
+  ];
+
+  // ----------------- DIALOG CONTENT -----------------
+  // Read your FAQ JSON and convert to weighted lines
+  function loadNathanFAQs(){
+    try{
+      const raw = document.getElementById('nathan_faqs_json').textContent;
+      const data = JSON.parse(raw);
+      const bag = [];
+      (data.faqs||[]).forEach(item=>{
+        const line = `Q: ${item.q}\nA: ${item.a}`;
+        const w = Math.max(1, item.weight||1);
+        for (let i=0;i<w;i++) bag.push(line);
+      });
+      return bag.length ? bag : ["(Add FAQs above to replace this placeholder.)"];
+    }catch{
+      return ["(FAQ JSON invalid — fix the block above.)"];
+    }
+  }
+  let NATHAN_LINES = loadNathanFAQs();
+
+  const frontDeskLines = [
+    "Welcome in! Nathan handles portraits and custom pieces.",
+    "We’ve got openings Thu–Sun 1–7 pm. Ask Nathan for details.",
+    "Check out healed photos on the wall!"
+  ];
+
+  // ----------------- NPCS -----------------
+  const NPCS = {
+    overworld: [
+      {name:"Local", x:9, y:9, color:COLORS.npc, lines:[
+        "You can enter doors marked in orange. Press E.",
+        "Head to 301 Tattoo—Nathan answers all the tattoo FAQs."
+      ]}
+    ],
+    shop: [
+      {name:"Nathan", x:7, y:5, color:"#ffdd88", lines:() => NATHAN_LINES },
+      {name:"Front Desk", x:4, y:5, color:"#95f3b5", lines:() => frontDeskLines }
+    ]
+  };
+
+  // ----------------- STATE -----------------
+  const state = {
+    mapName: "overworld",
+    player: {x:BUILDINGS[0].doorX, y:BUILDINGS[0].doorY+2},
+    mode: "overworld",
+    dialogQueue: []
+  };
+
+  // ----------------- INPUT -----------------
+  const keys = {};
+  addEventListener('keydown', e => {
+    keys[e.key]=true;
+    if (["ArrowUp","ArrowDown","ArrowLeft","ArrowRight"," "].includes(e.key)) e.preventDefault();
+  });
+  addEventListener('keyup', e => keys[e.key]=false);
+
+  // ----------------- CANVAS -----------------
+  const cvs = document.getElementById('game'), ctx = cvs.getContext('2d');
+
+  // ----------------- MAP HELPERS -----------------
+  function currentMap(){ return state.mapName==="overworld" ? overworld : shop; }
+  function tileAt(x,y){
+    const m = currentMap();
+    if (y<0||x<0||y>=m.length||x>=m[0].length) return 4;
+    return m[y][x];
+  }
+  function solidAt(x,y){
+    const t = tileAt(x,y);
+    return (t===1 || t===4 || t===6);
+  }
+  function findDoor(mapName,x,y){ return DOORS.find(d => d.map===mapName && d.x===x && d.y===y); }
+  function changeMap(name, px, py){ state.mapName=name; state.player.x=px; state.player.y=py; state.mode="overworld"; }
+
+  // ----------------- INTERACT -----------------
+  function lookAhead(){
+    const {x,y} = state.player;
+    if (keys.ArrowUp||keys.w) return {x, y:y-1};
+    if (keys.ArrowDown||keys.s) return {x, y:y+1};
+    if (keys.ArrowLeft||keys.a) return {x:x-1, y};
+    if (keys.ArrowRight||keys.d) return {x:x+1, y};
+    return {x, y:y-1};
+  }
+  function tryInteract(){
+    // door underfoot
+    let d = findDoor(state.mapName, state.player.x, state.player.y);
+    if (d){ changeMap(d.target, d.tx, d.ty); return; }
+    // door ahead
+    const ahead = lookAhead();
+    d = findDoor(state.mapName, ahead.x, ahead.y);
+    if (d){ changeMap(d.target, d.tx, d.ty); return; }
+    // npc facing
+    const npc = (NPCS[state.mapName]||[]).find(n => n.x===ahead.x && n.y===ahead.y);
+    if (npc){
+      const lines = typeof npc.lines==="function" ? npc.lines() : npc.lines;
+      startDialog(lines);
+    }
+  }
+
+  // ----------------- DIALOG -----------------
+  function wrap(text, width){
+    const out=[], parts=text.split("\n");
+    for (const p of parts){
+      const words=p.split(" ");
+      let line="";
+      for (const w of words){
+        if ((line+w).length>width){ out.push(line.trim()); line=w+" "; }
+        else line += w+" ";
+      }
+      if (line.trim()) out.push(line.trim());
+    }
+    return out;
+  }
+  function startDialog(lines){
+    const pick = lines[Math.floor(Math.random()*lines.length)];
+    state.dialogQueue
