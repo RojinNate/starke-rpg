@@ -7,52 +7,76 @@
 <style>
   body { background:#111; color:#ddd; font-family:system-ui, sans-serif; display:flex; flex-direction:column; align-items:center; gap:8px; }
   canvas { image-rendering: pixelated; image-rendering: crisp-edges; border:2px solid #444; background:#000; }
-  .panel { max-width:600px; font-size:14px; line-height:1.4; }
+  .panel { max-width:640px; font-size:14px; line-height:1.4; }
   button { background:#222; color:#ddd; border:1px solid #444; padding:6px 10px; cursor:pointer; }
+  /* Overlay viewer */
+  .overlay {
+    position: fixed; inset: 0; background: rgba(0,0,0,.85);
+    display: none; align-items: center; justify-content: center; z-index: 10;
+  }
+  .overlayInner {
+    max-width: 92vw; max-height: 90vh; background:#0b0b0b; border:1px solid #333; padding:8px;
+  }
+  .overlay img { max-width: 90vw; max-height: 80vh; display:block; }
+  .overlay .caption { color:#ccc; margin-top:6px; font-size:13px; }
+  .hint { font-size:12px; opacity:.85; }
 </style>
 </head>
 <body>
-  <h3>Starke, FL — Mini RPG</h3>
+  <h3>Starke, FL — 301 Tattoo (Playable)</h3>
   <canvas id="game" width="320" height="240"></canvas>
   <div class="panel">
-    <p>Move: Arrows/WASD • E: interact/enter/exit • Space: continue • Save/Load/Reset below</p>
+    <p>Move: Arrows/WASD • E: interact/enter/exit • Space: continue • Esc: close viewer • Save/Load/Reset:</p>
     <button id="saveBtn">Save</button> <button id="loadBtn">Load</button> <button id="resetBtn">Reset</button>
+    <p class="hint">Tip: Replace the JSON blocks below with your real image URLs and YouTube IDs.</p>
   </div>
 
-  <!-- ======== PASTE YOUR FAQS HERE ======== -->
-  <!-- Only edit the JSON inside this script tag. One entry per Q&A. -->
+  <!-- ======== YOUR CONTENT: FAQs ======== -->
   <script type="application/json" id="nathan_faqs_json">
-  {
-    "faqs": [
-      {
-        "q": "Does a tattoo hurt?",
-        "a": "Feels like a steady scratch. Most folks do fine. We can take breaks.",
-        "weight": 3
-      },
-      {
-        "q": "How do I book?",
-        "a": "Text 904-515-2333 with your idea, placement photo, and availability.",
-        "weight": 3
-      },
-      {
-        "q": "How much will it cost?",
-        "a": "Depends on size, detail, placement. Send refs and I’ll estimate before we book.",
-        "weight": 2
-      },
-      {
-        "q": "Do you take walk-ins?",
-        "a": "Yes—Thu–Sun 1–7pm. Outside that, text to set an appointment.",
-        "weight": 2
-      },
-      {
-        "q": "Aftercare basics?",
-        "a": "Keep it clean, thin ointment, no soaking or sun while healing. I’ll give you a sheet.",
-        "weight": 2
-      }
+  { "faqs": [
+    { "q":"Does a tattoo hurt?", "a":"Feels like a steady scratch. We can take breaks.", "weight":3 },
+    { "q":"How do I book?", "a":"Text 904-515-2333 with your idea, placement photo, and availability.", "weight":3 },
+    { "q":"How much will it cost?", "a":"Depends on size/detail/placement. Send refs and I’ll estimate.", "weight":2 },
+    { "q":"Do you take walk-ins?", "a":"Thu–Sun 1–7pm, otherwise text to set an appointment.", "weight":2 },
+    { "q":"Aftercare basics?", "a":"Keep it clean, thin ointment, no soaking or sun while healing.", "weight":2 }
+  ]}
+  </script>
+
+  <!-- ======== YOUR CONTENT: GALLERIES ======== -->
+  <!-- Paste direct image URLs; they can be on your site, Imgur, etc. -->
+  <script type="application/json" id="portfolio_gallery_json">
+  { "title": "Tattoo Portfolio",
+    "images": [
+      { "src": "https://via.placeholder.com/1200x800?text=Portrait+1", "caption":"Healed portrait" },
+      { "src": "https://via.placeholder.com/1200x800?text=Black+%26+Grey+2", "caption":"Black & grey" },
+      { "src": "https://via.placeholder.com/1200x800?text=Color+3", "caption":"Color piece" }
     ]
   }
   </script>
-  <!-- ======== END FAQ SECTION ======== -->
+
+  <script type="application/json" id="studio_gallery_json">
+  { "title": "Studio Photos",
+    "images": [
+      { "src": "https://via.placeholder.com/1200x800?text=Studio+Front", "caption":"Shop front" },
+      { "src": "https://via.placeholder.com/1200x800?text=Workstation", "caption":"Workstation" }
+    ]
+  }
+  </script>
+
+  <!-- ======== YOUR CONTENT: YOUTUBE KIOSK ======== -->
+  <!-- Provide either a playlist ID OR a list of individual video IDs. -->
+  <script type="application/json" id="youtube_kiosk_json">
+  {
+    "title": "301 Tattoo — Videos",
+    "playlistId": "", 
+    "videoIds": ["dQw4w9WgXcQ"]  /* replace with your real video IDs */
+  }
+  </script>
+
+  <!-- Image/Video Overlay -->
+  <div id="overlay" class="overlay" role="dialog" aria-modal="true">
+    <div class="overlayInner" id="overlayInner"></div>
+  </div>
 
 <script>
 (() => {
@@ -60,91 +84,79 @@
   const TILE = 16;
   const VIEW_W = 20, VIEW_H = 15; // 320x240
   const COLORS = {
-    sky:"#1b263b", ground:"#283d58", road:"#3b4f6b", bldg:"#7b8ba5",
-    door:"#f7b267", player:"#ffd166", npc:"#80ed99",
-    textBG:"#000000cc", text:"#e6e6e6", accent:"#f1fa8c",
-    wall:"#14213d", interior:"#1f2a44", counter:"#6c757d"
+    ground:"#283d58", road:"#3b4f6b", bldg:"#7b8ba5", door:"#f7b267",
+    wall:"#14213d", interior:"#1f2a44", counter:"#6c757d",
+    player:"#ffd166", npc:"#80ed99", textBG:"#000000cc", text:"#e6e6e6"
   };
 
+  // ----------------- LOAD JSON CONTENT -----------------
+  function getJSON(id, fallback){ try{ return JSON.parse(document.getElementById(id).textContent); }catch{ return fallback; } }
+  const FAQS = getJSON("nathan_faqs_json", {faqs:[]});
+  const G_PORT = getJSON("portfolio_gallery_json", {title:"Portfolio", images:[]});
+  const G_STUDIO = getJSON("studio_gallery_json", {title:"Studio", images:[]});
+  const YT = getJSON("youtube_kiosk_json", {title:"Videos", playlistId:"", videoIds:[]});
+
+  // Weighted bag for FAQs
+  const nathanBag = [];
+  (FAQS.faqs||[]).forEach(item=>{
+    const line = `Q: ${item.q}\nA: ${item.a}`;
+    const w = Math.max(1, item.weight||1);
+    for(let i=0;i<w;i++) nathanBag.push(line);
+  });
+  if (!nathanBag.length) nathanBag.push("(Add FAQs in the JSON block above.)");
+
   // ----------------- MAPS -----------------
-  // Tile legend: 0 ground, 1 building block (solid), 2 road, 3 door, 4 interior wall (solid), 5 interior floor, 6 counter (solid)
+  // Tile legend: 0 ground, 1 building(solid), 2 road, 3 door, 4 wall(solid), 5 floor, 6 counter(solid), 7 kiosk, 8 gallery marker
   const OW_W=42, OW_H=30;
-  const overworld = Array.from({length:OW_H}, (_,y)=>Array.from({length:OW_W}, (_,x)=>{
-    if (y===12 || y===13) return 2; // road stripe
-    return 0;
-  }));
+  const overworld = Array.from({length:OW_H}, (_,y)=>Array.from({length:OW_W}, (_,x)=> (y===12||y===13)?2:0));
 
-  function rect(grid,x0,y0,w,h,tile){
-    for(let y=y0;y<y0+h;y++){
-      for(let x=x0;x<x0+w;x++){
-        if (y>=0 && x>=0 && y<grid.length && x<grid[0].length){
-          grid[y][x]=tile;
-        }
-      }
-    }
-  }
+  function rect(grid,x0,y0,w,h,t){ for(let y=y0;y<y0+h;y++){ for(let x=x0;x<x0+w;x++){ if(grid[y]&&grid[y][x]!=null) grid[y][x]=t; } } }
 
-  // ---- Buildings you can tweak (position is coarse/fictional) ----
   const BUILDINGS = [
     { name:"301 Tattoo", key:"shop", x:18, y:7, w:6, h:4, doorX:21, doorY:11 },
     { name:"Diner",      key:"diner", x:6,  y:5, w:5, h:4, doorX:8,  doorY:9  },
     { name:"Pawn",       key:"pawn",  x:30, y:6, w:6, h:4, doorX:33, doorY:11 }
   ];
-  BUILDINGS.forEach(b => { rect(overworld, b.x, b.y, b.w, b.h, 1); overworld[b.doorY][b.doorX]=3; });
+  BUILDINGS.forEach(b=>{ rect(overworld,b.x,b.y,b.w,b.h,1); overworld[b.doorY][b.doorX]=3; });
 
-  // ---- Interior: Tattoo Shop (simple) ----
-  const SHOP_W=18, SHOP_H=12;
+  // Tattoo Shop interior
+  const SHOP_W=20, SHOP_H=14;
   const shop = Array.from({length:SHOP_H}, (_,y)=>Array.from({length:SHOP_W}, (_,x)=>{
-    if (x===0||y===0||x===SHOP_W-1||y===SHOP_H-1) return 4;
-    return 5;
+    if (x===0||y===0||x===SHOP_W-1||y===SHOP_H-1) return 4; // walls
+    return 5; // floor
   }));
-  rect(shop, 2,3, 6,1, 6); // counter
-  shop[SHOP_H-1][Math.floor(SHOP_W/2)] = 3; // exit door
+  rect(shop,2,3, 7,1, 6); // counter
+  // Exit door
+  shop[SHOP_H-1][Math.floor(SHOP_W/2)] = 3;
 
-  // ----------------- DOOR LINKS -----------------
+  // --- Interactables in shop ---
+  // Left wall gallery (portfolio)
+  shop[2][2] = 8; shop[2][3] = 8; shop[2][4] = 8;
+  // Right wall gallery (studio photos)
+  shop[2][SHOP_W-3] = 8; shop[2][SHOP_W-4] = 8;
+  // Kiosk (near counter)
+  shop[4][10] = 7;
+
+  // ----------------- DOORS -----------------
   const DOORS = [
-    // Into 301 Tattoo
     { map:"overworld", x:BUILDINGS[0].doorX, y:BUILDINGS[0].doorY, target:"shop", tx:Math.floor(SHOP_W/2), ty:SHOP_H-2 },
-    // Back out
     { map:"shop", x:Math.floor(SHOP_W/2), y:SHOP_H-1, target:"overworld", tx:BUILDINGS[0].doorX, ty:BUILDINGS[0].doorY+1 }
-  ];
-
-  // ----------------- DIALOG CONTENT -----------------
-  // Read your FAQ JSON and convert to weighted lines
-  function loadNathanFAQs(){
-    try{
-      const raw = document.getElementById('nathan_faqs_json').textContent;
-      const data = JSON.parse(raw);
-      const bag = [];
-      (data.faqs||[]).forEach(item=>{
-        const line = `Q: ${item.q}\nA: ${item.a}`;
-        const w = Math.max(1, item.weight||1);
-        for (let i=0;i<w;i++) bag.push(line);
-      });
-      return bag.length ? bag : ["(Add FAQs above to replace this placeholder.)"];
-    }catch{
-      return ["(FAQ JSON invalid — fix the block above.)"];
-    }
-  }
-  let NATHAN_LINES = loadNathanFAQs();
-
-  const frontDeskLines = [
-    "Welcome in! Nathan handles portraits and custom pieces.",
-    "We’ve got openings Thu–Sun 1–7 pm. Ask Nathan for details.",
-    "Check out healed photos on the wall!"
   ];
 
   // ----------------- NPCS -----------------
   const NPCS = {
     overworld: [
       {name:"Local", x:9, y:9, color:COLORS.npc, lines:[
-        "You can enter doors marked in orange. Press E.",
-        "Head to 301 Tattoo—Nathan answers all the tattoo FAQs."
+        "Doors are orange. Press E to enter.",
+        "301 Tattoo’s up the street—Nathan answers FAQs."
       ]}
     ],
     shop: [
-      {name:"Nathan", x:7, y:5, color:"#ffdd88", lines:() => NATHAN_LINES },
-      {name:"Front Desk", x:4, y:5, color:"#95f3b5", lines:() => frontDeskLines }
+      {name:"Nathan", x:6, y:5, color:"#ffdd88", lines:()=>nathanBag },
+      {name:"Front Desk", x:4, y:5, color:"#95f3b5", lines:()=>[
+        "Welcome in! Portfolio’s on the left wall, studio photos on the right.",
+        "Try the video kiosk by the counter for our YouTube clips."
+      ]}
     ]
   };
 
@@ -152,15 +164,18 @@
   const state = {
     mapName: "overworld",
     player: {x:BUILDINGS[0].doorX, y:BUILDINGS[0].doorY+2},
-    mode: "overworld",
-    dialogQueue: []
+    mode: "overworld", // "overworld" | "dialog" | "overlay"
+    dialogQueue: [],
+    hintText: ""
   };
 
   // ----------------- INPUT -----------------
   const keys = {};
   addEventListener('keydown', e => {
     keys[e.key]=true;
-    if (["ArrowUp","ArrowDown","ArrowLeft","ArrowRight"," "].includes(e.key)) e.preventDefault();
+    if (["ArrowUp","ArrowDown","ArrowLeft","ArrowRight"," ","Escape"].includes(e.key)) e.preventDefault();
+    if (state.mode==="overlay" && e.key==="Escape") closeOverlay();
+    if (state.mode==="overlay" && (e.key==="ArrowRight"||e.key==="ArrowLeft")) stepGallery(e.key==="ArrowRight"?1:-1);
   });
   addEventListener('keyup', e => keys[e.key]=false);
 
@@ -169,57 +184,222 @@
 
   // ----------------- MAP HELPERS -----------------
   function currentMap(){ return state.mapName==="overworld" ? overworld : shop; }
-  function tileAt(x,y){
-    const m = currentMap();
-    if (y<0||x<0||y>=m.length||x>=m[0].length) return 4;
-    return m[y][x];
-  }
-  function solidAt(x,y){
-    const t = tileAt(x,y);
-    return (t===1 || t===4 || t===6);
-  }
-  function findDoor(mapName,x,y){ return DOORS.find(d => d.map===mapName && d.x===x && d.y===y); }
-  function changeMap(name, px, py){ state.mapName=name; state.player.x=px; state.player.y=py; state.mode="overworld"; }
+  function tileAt(x,y){ const m=currentMap(); return (m[y]&&m[y][x]!=null)?m[y][x]:4; }
+  function solidAt(x,y){ const t=tileAt(x,y); return t===1||t===4||t===6; }
+  function findDoor(map,x,y){ return DOORS.find(d=>d.map===map&&d.x===x&&d.y===y); }
+  function changeMap(name,px,py){ state.mapName=name; state.player.x=px; state.player.y=py; state.mode="overworld"; }
 
   // ----------------- INTERACT -----------------
   function lookAhead(){
-    const {x,y} = state.player;
+    const {x,y}=state.player;
     if (keys.ArrowUp||keys.w) return {x, y:y-1};
     if (keys.ArrowDown||keys.s) return {x, y:y+1};
     if (keys.ArrowLeft||keys.a) return {x:x-1, y};
     if (keys.ArrowRight||keys.d) return {x:x+1, y};
     return {x, y:y-1};
   }
+  function npcFacing(){
+    const a=lookAhead(); return (NPCS[state.mapName]||[]).find(n=>n.x===a.x && n.y===a.y);
+  }
+
   function tryInteract(){
     // door underfoot
-    let d = findDoor(state.mapName, state.player.x, state.player.y);
-    if (d){ changeMap(d.target, d.tx, d.ty); return; }
+    let d=findDoor(state.mapName,state.player.x,state.player.y);
+    if (d){ changeMap(d.target,d.tx,d.ty); return; }
     // door ahead
-    const ahead = lookAhead();
-    d = findDoor(state.mapName, ahead.x, ahead.y);
-    if (d){ changeMap(d.target, d.tx, d.ty); return; }
-    // npc facing
-    const npc = (NPCS[state.mapName]||[]).find(n => n.x===ahead.x && n.y===ahead.y);
-    if (npc){
-      const lines = typeof npc.lines==="function" ? npc.lines() : npc.lines;
-      startDialog(lines);
+    const ahead=lookAhead(); d=findDoor(state.mapName,ahead.x,ahead.y);
+    if (d){ changeMap(d.target,d.tx,d.ty); return; }
+
+    // shop interactables
+    if (state.mapName==="shop"){
+      const t=tileAt(ahead.x,ahead.y);
+      if (t===8){ // gallery marker
+        // choose left vs right by x
+        if (ahead.x <= 4) openGallery(G_PORT);
+        else openGallery(G_STUDIO);
+        return;
+      }
+      if (t===7){ // kiosk
+        openYouTube(YT);
+        return;
+      }
     }
+
+    // NPCs
+    const npc=npcFacing();
+    if (npc){ startDialog(typeof npc.lines==="function"? npc.lines():npc.lines); }
   }
 
   // ----------------- DIALOG -----------------
-  function wrap(text, width){
-    const out=[], parts=text.split("\n");
-    for (const p of parts){
-      const words=p.split(" ");
-      let line="";
-      for (const w of words){
-        if ((line+w).length>width){ out.push(line.trim()); line=w+" "; }
-        else line += w+" ";
-      }
-      if (line.trim()) out.push(line.trim());
-    }
-    return out;
-  }
+  function wrap(text,w){ const out=[]; text.split("\n").forEach(p=>{ let line=""; p.split(" ").forEach(word=>{ if((line+word).length>w){ out.push(line.trim()); line=word+" "; } else line+=word+" "; }); if(line.trim()) out.push(line.trim()); }); return out; }
   function startDialog(lines){
     const pick = lines[Math.floor(Math.random()*lines.length)];
-    state.dialogQueue
+    state.dialogQueue = wrap(pick, 34);
+    state.mode="dialog";
+  }
+
+  // ----------------- MOVEMENT -----------------
+  let moveCooldown=0;
+  function stepOverworld(dt){
+    moveCooldown = Math.max(0, moveCooldown - dt);
+    let dx=0,dy=0;
+    if (moveCooldown<=0){
+      if (keys.ArrowUp||keys.w) dy=-1;
+      else if (keys.ArrowDown||keys.s) dy=1;
+      else if (keys.ArrowLeft||keys.a) dx=-1;
+      else if (keys.ArrowRight||keys.d) dx=1;
+      if (dx||dy){
+        const nx=state.player.x+dx, ny=state.player.y+dy;
+        if (!solidAt(nx,ny)){ state.player.x=nx; state.player.y=ny; }
+        moveCooldown=110;
+      }
+    }
+    if (keys.e||keys.E){ tryInteract(); keys.e=keys.E=false; }
+    // live hint if facing interactable
+    state.hintText = hintForAhead();
+  }
+
+  function hintForAhead(){
+    const a=lookAhead(); const t=tileAt(a.x,a.y);
+    if (findDoor(state.mapName,a.x,a.y)) return "Press E to enter/exit";
+    if (state.mapName==="shop"){
+      if (t===8){ return (a.x<=4) ? "Press E to view Portfolio" : "Press E to view Studio Photos"; }
+      if (t===7){ return "Press E to open YouTube Kiosk"; }
+    }
+    if (npcFacing()) return "Press E to talk";
+    return "";
+  }
+
+  // ----------------- DRAW -----------------
+  function draw(){
+    const m=currentMap(), h=m.length, w=m[0].length;
+    const camX = Math.max(0, Math.min(state.player.x - Math.floor(VIEW_W/2), w - VIEW_W));
+    const camY = Math.max(0, Math.min(state.player.y - Math.floor(VIEW_H/2), h - VIEW_H));
+
+    for(let ty=0; ty<VIEW_H; ty++){
+      for(let tx=0; tx<VIEW_W; tx++){
+        const gx=camX+tx, gy=camY+ty, t=tileAt(gx,gy);
+        let fill=COLORS.ground;
+        if (state.mapName==="overworld"){
+          if (t===2) fill=COLORS.road; else if (t===1) fill=COLORS.bldg; else if (t===3) fill=COLORS.door;
+        }else{
+          if (t===4) fill=COLORS.wall; else if (t===6) fill=COLORS.counter; else if (t===3) fill=COLORS.door; else if (t===7) fill="#204060"; else if (t===8) fill="#604020"; else fill=COLORS.interior;
+        }
+        ctx.fillStyle=fill; ctx.fillRect(tx*TILE, ty*TILE, TILE, TILE);
+      }
+    }
+
+    // NPCs
+    (NPCS[state.mapName]||[]).forEach(n=>{
+      if (n.x>=camX && n.y>=camY && n.x<camX+VIEW_W && n.y<camY+VIEW_H){
+        ctx.fillStyle=n.color; ctx.fillRect((n.x-camX)*TILE+4, (n.y-camY)*TILE+4, TILE-8, TILE-8);
+      }
+    });
+
+    // Player
+    ctx.fillStyle=COLORS.player;
+    ctx.fillRect((state.player.x-camX)*TILE+4, (state.player.y-camY)*TILE+4, TILE-8, TILE-8);
+
+    // Dialog box
+    if (state.mode==="dialog") drawUIBox(state.dialogQueue.slice(0,3).concat(["(Space)"]));
+
+    // Hint
+    if (state.hintText){
+      ctx.fillStyle="#000000aa"; ctx.fillRect(2,2,316,16);
+      ctx.fillStyle="#fff"; ctx.font="10px monospace"; ctx.fillText(state.hintText, 6, 14);
+    }
+  }
+
+  function drawUIBox(lines){
+    const h=56, w=cvs.width-8;
+    ctx.fillStyle=COLORS.textBG; ctx.fillRect(4, cvs.height-h-4, w, h);
+    ctx.fillStyle=COLORS.text; ctx.font="10px monospace";
+    let y=cvs.height-h+10; lines.forEach(line=>{ ctx.fillText(line, 8, y); y+=12; });
+  }
+
+  // Dialog input
+  addEventListener('keydown', e=>{
+    if (state.mode==="dialog" && e.key===" "){
+      if (state.dialogQueue.length>3) state.dialogQueue.splice(0,3);
+      else state.mode="overworld";
+    }
+  });
+
+  // ----------------- SAVE/LOAD -----------------
+  function save(){ localStorage.setItem("starkeRPG", JSON.stringify({state})); }
+  function load(){ const raw=localStorage.getItem("starkeRPG"); if(!raw) return; try{ const d=JSON.parse(raw); Object.assign(state, d.state||{}); }catch{} }
+  function reset(){ localStorage.removeItem("starkeRPG"); state.mapName="overworld"; state.player={x:BUILDINGS[0].doorX,y:BUILDINGS[0].doorY+2}; state.mode="overworld"; }
+  document.getElementById('saveBtn').onclick=save;
+  document.getElementById('loadBtn').onclick=load;
+  document.getElementById('resetBtn').onclick=reset;
+
+  // ----------------- OVERLAY VIEWERS -----------------
+  const overlay = document.getElementById('overlay');
+  const overlayInner = document.getElementById('overlayInner');
+  let galleryCtx = null; // {images, i}
+
+  function openGallery(g){
+    if (!g || !g.images || !g.images.length) return;
+    galleryCtx = { images: g.images.slice(), i: 0, title: g.title||"Gallery" };
+    renderGallery();
+    state.mode="overlay";
+    overlay.style.display="flex";
+  }
+  function renderGallery(){
+    const item = galleryCtx.images[galleryCtx.i];
+    overlayInner.innerHTML = `
+      <div style="color:#fff; font:14px/1.2 monospace; margin-bottom:6px;">${galleryCtx.title} — ${galleryCtx.i+1}/${galleryCtx.images.length} (←/→, Esc)</div>
+      <img src="${item.src}" alt="">
+      <div class="caption">${item.caption?item.caption:""}</div>
+    `;
+  }
+  function stepGallery(dir){
+    if (!galleryCtx) return;
+    galleryCtx.i = (galleryCtx.i + dir + galleryCtx.images.length) % galleryCtx.images.length;
+    renderGallery();
+  }
+
+  function openYouTube(cfg){
+    const title = cfg.title||"Videos";
+    let embed = "";
+    if (cfg.playlistId){
+      embed = `https://www.youtube.com/embed/videoseries?list=${encodeURIComponent(cfg.playlistId)}`;
+    } else if ((cfg.videoIds||[]).length){
+      const id = cfg.videoIds[0];
+      embed = `https://www.youtube.com/embed/${encodeURIComponent(id)}`;
+    } else {
+      embed = `about:blank`;
+    }
+    overlayInner.innerHTML = `
+      <div style="color:#fff; font:14px/1.2 monospace; margin-bottom:6px;">${title} (Esc to close)</div>
+      <div style="width:80vw; max-width:960px; aspect-ratio:16/9; background:#000;">
+        <iframe width="100%" height="100%" src="${embed}" title="YouTube video player" frameborder="0"
+          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+          allowfullscreen referrerpolicy="strict-origin-when-cross-origin"></iframe>
+      </div>
+      <div class="caption">Use the kiosk again to reopen or switch to a playlist via JSON.</div>
+    `;
+    state.mode="overlay";
+    overlay.style.display="flex";
+  }
+  function closeOverlay(){
+    overlay.style.display="none";
+    overlayInner.innerHTML = "";
+    galleryCtx=null;
+    state.mode="overworld";
+  }
+  overlay.addEventListener('click', (e)=>{ if (e.target===overlay) closeOverlay(); });
+
+  // ----------------- MAIN LOOP -----------------
+  let last = performance.now();
+  function loop(now){
+    const dt = now-last; last=now;
+    if (state.mode==="overworld") stepOverworld(dt);
+    draw();
+    requestAnimationFrame(loop);
+  }
+  requestAnimationFrame(loop);
+})();
+</script>
+</body>
+</html>
